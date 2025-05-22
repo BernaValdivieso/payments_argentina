@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel File Processor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Excel File Processor</h1>
+
+        <!-- Sección de subir archivo -->
+        <div id="upload-section" {% if filename %}class="hidden"{% endif %}>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <div class="upload-group">
+                    <h3>Clock-Ins</h3>
+                    <input type="file" name="clock_ins_file" accept=".xlsx,.xls" required>
+                </div>
+                
+                <div class="upload-group">
+                    <h3>Deliveries</h3>
+                    <input type="file" name="deliveries_file" accept=".xlsx,.xls" required>
+                </div>
+
+                <button type="submit">Upload Files</button>
+            </form>
+        </div>
+
+        <!-- Sección de procesamiento de archivo -->
+        {% if filename and not processed %}
+            <div id="process-section">
+                <h3>Uploaded File: {{ clock_ins_filename }}</h3>
+                <form id="job-form" action="/process/{{ filename }}" method="post">
+                    <fieldset class="work-entries">
+                        <legend>Work Entries</legend>
+                    
+                        <div id="jobs-container">
+                            <p id="no-jobs-message">No work entries added yet.</p>
+                        </div>
+                    
+                        <button type="button" id="add-job-btn">+ Add another Job</button>
+                    </fieldset>
+                    
+                    <!-- Sección de redondeo -->
+                    <fieldset class="rounding-options">
+                        <legend>Calculation and Rounding Options</legend>
+                    
+                        <!-- Redondeo de cálculos -->
+                        <label for="decimal_places">
+                            <strong>Decimal places for calculations:</strong>
+                        </label>
+                        <input type="number" name="decimal_places" id="decimal_places" min="0" step="1" placeholder="Enter decimal places">
+                    
+                        <!-- Redondeo de tiempos de entrada y salida -->
+                        <div class="rounding-toggle">
+                            <input type="checkbox" name="round_time" id="round_time" onclick="toggleRoundInterval()">
+                            <label for="round_time">
+                                Round clock-in and clock-out times
+                            </label>
+                        </div>
+                    
+                        <div class="rounding-input">
+                            <label for="round_interval">
+                                <strong>Round to nearest (minutes):</strong>
+                            </label>
+                            <input type="number" name="round_interval" id="round_interval" min="1" step="1" placeholder="Enter minutes" disabled>
+                        </div>
+                    </fieldset>
+                    
+                    <fieldset class="overtime-options">
+                        <legend>Overtime Options</legend>
+                    
+                        <!-- Input para horas extras -->
+                        <div class="overtime-entry">
+                            <label for="weekly_limit">
+                                <strong>Weekly Regular Hours Limit:</strong>
+                            </label>
+                            <input type="number" name="weekly_limit" id="weekly_limit" min="0" step="0.5" placeholder="Enter weekly hours limit" required>
+                        </div>
+                    
+                        <div class="overtime-input">
+                            <label for="overtime_rate_multiplier">
+                                <strong>Rate multiplier:</strong>
+                            </label>
+                            <input type="number" name="overtime_rate_multiplier" id="overtime_rate_multiplier" min="1" step="0.01" placeholder="Enter overtime rate">
+                        </div>
+                    </fieldset>
+
+                    <button type="submit">Process File</button>
+                </form>
+            </div>
+        {% endif %}
+
+        <!-- Sección de descarga de archivo procesado -->
+        {% if processed %}
+            <div id="download-section">
+                <h3>File processed successfully. You can download it.</h3>
+                <a href="{{ url_for('main.download_file', filename='processed_' + filename) }}" class="btn">Download Processed File</a>
+            </div>
+        {% endif %}
+
+        <button class="reset-btn" onclick="window.location.href='/'">Reset</button>
+    </div>
+
+    <script>
+        function toggleRoundInterval() {
+            const roundCheckbox = document.getElementById("round_time");
+            const roundIntervalInput = document.getElementById("round_interval");
+            roundIntervalInput.disabled = !roundCheckbox.checked;
+        }
+    
+        const jobTypes = ["Lunch", "Break", "Other"];
+        const jobsContainer = document.getElementById("jobs-container");
+        const addJobBtn = document.getElementById("add-job-btn");
+        const noJobsMessage = document.getElementById("no-jobs-message");
+
+        function updateJobVisibility() {
+            const hasJobs = jobsContainer.querySelectorAll('.job-entry').length > 0;
+            noJobsMessage.style.display = hasJobs ? "none" : "block";
+        }
+    
+        function updateSelectOptions() {
+            let selectedTypes = new Set();
+            document.querySelectorAll('.job-entry select').forEach(select => {
+                if (select.value !== "select") {
+                    selectedTypes.add(select.value);
+                }
+            });
+    
+            document.querySelectorAll('.job-entry select').forEach(select => {
+                let currentValue = select.value;
+                select.innerHTML = "";
+    
+                let placeholderOption = document.createElement("option");
+                placeholderOption.value = "select";
+                placeholderOption.textContent = "Select job type";
+                placeholderOption.disabled = true;
+                placeholderOption.selected = true;
+                select.appendChild(placeholderOption);
+    
+                jobTypes.forEach(type => {
+                    if (!selectedTypes.has(type) || type === currentValue) {
+                        let option = document.createElement("option");
+                        option.value = type;
+                        option.textContent = type;
+                        select.appendChild(option);
+                    }
+                });
+    
+                select.value = currentValue;
+            });
+    
+            // Desactivar botón y aplicar clase CSS si ya hay 3 jobs
+            if (document.querySelectorAll('.job-entry').length >= 3) {
+                addJobBtn.disabled = true;
+                addJobBtn.classList.add("disabled-btn");
+            } else {
+                addJobBtn.disabled = false;
+                addJobBtn.classList.remove("disabled-btn");
+            }
+        }
+    
+        if (addJobBtn) {
+            addJobBtn.addEventListener("click", function () {
+                if (document.querySelectorAll('.job-entry').length >= 3) {
+                    return alert("You can add a maximum of 3 jobs.");
+                }
+
+                let selectedTypes = new Set();
+                document.querySelectorAll('.job-entry select').forEach(select => {
+                    if (select.value !== "select") {
+                        selectedTypes.add(select.value);
+                    }
+                });
+
+                let availableTypes = jobTypes.filter(type => !selectedTypes.has(type));
+                if (availableTypes.length === 0) return alert("No more job types available.");
+
+                let div = document.createElement("div");
+                div.classList.add("job-entry");
+
+                const jobIndex = document.querySelectorAll('.job-entry').length;
+
+                div.innerHTML = `
+                    <button type="button" class="remove-job-btn">X</button>
+                    <input type="number" name="job[hour][]" placeholder="Hour(s)" required>
+                    <input type="number" name="job[minutes][]" placeholder="Minute(s)" required>
+                    <select name="job[type][]" required></select>
+                    <label class="switch">
+                        <input type="checkbox" name="job[paid][]" value="${jobIndex}">
+                        <span class="slider round"></span>
+                    </label>
+                    <span>Paid</span>
+                `;
+
+
+                let select = div.querySelector("select");
+
+                let placeholderOption = document.createElement("option");
+                placeholderOption.value = "select";
+                placeholderOption.textContent = "Select job type";
+                placeholderOption.disabled = true;
+                placeholderOption.selected = true;
+                select.appendChild(placeholderOption);
+
+                availableTypes.forEach(type => {
+                    let option = document.createElement("option");
+                    option.value = type;
+                    option.textContent = type;
+                    select.appendChild(option);
+                });
+
+                // Agregar evento para eliminar un job
+                div.querySelector(".remove-job-btn").addEventListener("click", function () {
+                    div.remove();
+                    updateJobVisibility();
+                });
+
+                jobsContainer.appendChild(div);
+                updateJobVisibility();
+            });
+
+            document.addEventListener("change", function (event) {
+                if (event.target.matches(".job-entry select")) {
+                    updateSelectOptions();
+                }
+            });
+
+            // Asegurar que el mensaje inicial se actualice correctamente
+            updateJobVisibility();
+        }
+    </script>
+</body>
+</html>
