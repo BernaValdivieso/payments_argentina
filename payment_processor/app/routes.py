@@ -17,8 +17,20 @@ def allowed_file(filename):
 
 def process_excel(file_path):
     try:
-        # Read the Excel file with pandas using engine='openpyxl'
-        df = pd.read_excel(file_path, sheet_name='9. Remuneracion', engine='openpyxl')
+        # Try to read the Excel file with Spanish sheet name first
+        try:
+            df = pd.read_excel(file_path, sheet_name='9. Remuneracion', engine='openpyxl')
+            # Spanish column names
+            costo_piezas_col = 'Costo Piezas'
+            costo_horas_col = 'Costo Horas ($)'
+            costo_total_col = 'Costo Total ($)'
+        except:
+            # If Spanish fails, try English sheet name
+            df = pd.read_excel(file_path, sheet_name='9. Payroll', engine='openpyxl')
+            # English column names
+            costo_piezas_col = 'Cost per pieces ($)'
+            costo_horas_col = 'Cost per hours ($)'
+            costo_total_col = 'Total cost ($)'
         
         # Create a new workbook
         wb = Workbook()
@@ -34,23 +46,23 @@ def process_excel(file_path):
             cell.fill = PatternFill(start_color='CCCCCC', end_color='CCCCCC', fill_type='solid')
         
         # Get column indices
-        costo_piezas_col = df.columns.get_loc('Costo Piezas') + 1
-        costo_horas_col = df.columns.get_loc('Costo Horas ($)') + 1
-        costo_total_col = df.columns.get_loc('Costo Total ($)') + 1
+        costo_piezas_col_idx = df.columns.get_loc(costo_piezas_col) + 1
+        costo_horas_col_idx = df.columns.get_loc(costo_horas_col) + 1
+        costo_total_col_idx = df.columns.get_loc(costo_total_col) + 1
         
         # Copy data and update Costo Total
         for row_idx, row in enumerate(df.values, 2):
             for col_idx, value in enumerate(row, 1):
                 cell = sheet.cell(row=row_idx, column=col_idx, value=value)
                 # Apply number format for currency columns
-                if 'Costo' in df.columns[col_idx-1]:
+                if 'Costo' in df.columns[col_idx-1] or 'Cost' in df.columns[col_idx-1]:
                     cell.number_format = '#,##0.00'
             
             # Update Costo Total with the highest value
-            costo_piezas = row[df.columns.get_loc('Costo Piezas')]
-            costo_horas = row[df.columns.get_loc('Costo Horas ($)')]
+            costo_piezas = row[df.columns.get_loc(costo_piezas_col)]
+            costo_horas = row[df.columns.get_loc(costo_horas_col)]
             costo_total = max(costo_piezas, costo_horas)
-            sheet.cell(row=row_idx, column=costo_total_col, value=costo_total)
+            sheet.cell(row=row_idx, column=costo_total_col_idx, value=costo_total)
         
         # Add new column for payment type
         tipo_pago_col = len(df.columns) + 1
@@ -63,8 +75,8 @@ def process_excel(file_path):
         
         # Process payment type
         for row_idx, row in enumerate(df.values, 2):
-            costo_piezas = row[df.columns.get_loc('Costo Piezas')]
-            costo_horas = row[df.columns.get_loc('Costo Horas ($)')]
+            costo_piezas = row[df.columns.get_loc(costo_piezas_col)]
+            costo_horas = row[df.columns.get_loc(costo_horas_col)]
             
             if costo_piezas > costo_horas:
                 sheet.cell(row=row_idx, column=tipo_pago_col, value='Piezas')
